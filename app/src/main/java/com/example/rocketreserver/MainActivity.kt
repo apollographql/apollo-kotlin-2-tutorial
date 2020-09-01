@@ -1,6 +1,7 @@
 package com.example.rocketreserver
 
 import android.os.Bundle
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.ScrollableColumn
 import androidx.compose.foundation.Text
@@ -8,10 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyColumnFor
 import androidx.compose.material.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.launchInComposition
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layoutId
@@ -21,9 +19,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.ui.tooling.preview.Preview
 import coil.request.ImageRequest
+import com.apollographql.apollo.ApolloCall
+import com.apollographql.apollo.ApolloQueryCall
+import com.apollographql.apollo.api.Response
 import com.apollographql.apollo.coroutines.toDeferred
+import com.apollographql.apollo.coroutines.toFlow
 import com.apollographql.apollo.exception.ApolloException
 import dev.chrisbanes.accompanist.coil.CoilImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onErrorResume
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,27 +68,26 @@ sealed class UiState {
 fun LaunchListContent() {
     val context = ContextAmbient.current
 
-    val state = remember { mutableStateOf<UiState>(UiState.Loading) }
-    launchInComposition {
-        try {
-            val launchList = apolloClient(context).query(LaunchListQuery()).toDeferred().await()
-                .data
-                ?.launchConnection
-                ?.launches
-                ?.filterNotNull()
-            if (launchList == null) {
-                // There were some error
-                // TODO: do something with response.errors
-                state.value = UiState.Error
-            } else {
-                state.value = UiState.Success(launchList)
+    val state = remember {
+        apolloClient(context).query(LaunchListQuery()).watcher().toFlow()
+            .map {
+                val launchList = it
+                    .data
+                    ?.launchConnection
+                    ?.launches
+                    ?.filterNotNull()
+                if (launchList == null) {
+                    // There were some error
+                    // TODO: do something with response.errors
+                    UiState.Error
+                } else {
+                    UiState.Success(launchList)
+                }
             }
-        } catch (e: ApolloException) {
-            // There were some network errors
-            // TODO: add a retry button
-            state.value = UiState.Error
-        }
-    }
+            .catch { e ->
+                emit(UiState.Error)
+            }
+    }.collectAsState(initial = UiState.Loading)
 
     Stack(modifier = Modifier.fillMaxSize()) {
         when (val value = state.value) {
@@ -126,6 +133,34 @@ fun LaunchList(launchList: List<LaunchListQuery.Launch>) {
 
 @Composable
 fun LaunchItem(launch: LaunchListQuery.Launch, modifier: Modifier = Modifier) {
+    val context = ContextAmbient.current
+
+    val bookTrip = {
+        // TODO: use something better than GlobalScope
+        GlobalScope.launch(Dispatchers.Main) {
+            if (!launch.isBooked) {
+                try {
+                    apolloClient(context).mutate(
+                        BookTripMutation(launch.id),
+                        BookTripMutation.Data(
+                            bookTrips = BookTripMutation.BookTrips(
+                                launches = listOf(
+                                    BookTripMutation.Launch(
+                                        id = launch.id,
+                                        isBooked = true
+                                    )
+                                )
+                            )
+                        )
+                    ).toDeferred().await()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+        Unit
+    }
+
     ConstraintLayout(
         modifier = modifier,
         constraintSet = ConstraintSet {
@@ -134,35 +169,47 @@ fun LaunchItem(launch: LaunchListQuery.Launch, modifier: Modifier = Modifier) {
 
             val missionName = createRefFor("missionName")
             val site = createRefFor("site")
+            val button = createRefFor("button")
 
             constrain(image) {
-                absoluteLeft.linkTo(parent.absoluteLeft, 8.dp)
-                top.linkTo(parent.top, 8.dp)
-                width = Dimension.value(50.dp)
-                height = Dimension.value(50.dp)
+                start.linkTo(parent.start, 16.dp)
+                top.linkTo(parent.top, 16.dp)
+                bottom.linkTo(parent.bottom, 16.dp)
+                width = Dimension.value(80.dp)
+                height = Dimension.value(80.dp)
             }
 
             constrain(divider) {
-                absoluteLeft.linkTo(parent.absoluteLeft)
-                absoluteRight.linkTo(parent.absoluteRight)
-                top.linkTo(site.bottom, 8.dp)
+                start.linkTo(parent.start)
+                end.linkTo(parent.end)
                 bottom.linkTo(parent.bottom)
                 width = Dimension.fillToConstraints
                 height = Dimension.value(1.dp)
             }
 
             constrain(missionName) {
-                absoluteLeft.linkTo(image.absoluteRight, 16.dp)
-                absoluteRight.linkTo(parent.absoluteRight)
+                start.linkTo(image.end, 16.dp)
+                end.linkTo(button.start, 8.dp)
                 width = Dimension.fillToConstraints
-                top.linkTo(parent.top, 8.dp)
+                height = Dimension.wrapContent
+                top.linkTo(image.top)
+                bottom.linkTo(site.top)
             }
 
             constrain(site) {
-                absoluteLeft.linkTo(image.absoluteRight, 16.dp)
-                absoluteRight.linkTo(parent.absoluteRight)
+                start.linkTo(image.end, 16.dp)
+                end.linkTo(button.start, 8.dp)
                 width = Dimension.fillToConstraints
+                height = Dimension.wrapContent
                 top.linkTo(missionName.bottom)
+                bottom.linkTo(image.bottom)
+            }
+
+            constrain(button) {
+                end.linkTo(parent.end, 8.dp)
+                width = Dimension.wrapContent
+                height = Dimension.wrapContent
+                top.linkTo(parent.top)
                 bottom.linkTo(parent.bottom)
             }
         }) {
@@ -186,6 +233,13 @@ fun LaunchItem(launch: LaunchListQuery.Launch, modifier: Modifier = Modifier) {
             modifier = Modifier.layoutId("site"),
             text = launch.site!!,
         )
+        Button(
+            modifier = Modifier.layoutId("button"),
+            enabled = launch.isBooked.not(),
+            onClick = bookTrip
+        ) {
+            Text(if (launch.isBooked) "BOOKED" else "BOOK")
+        }
     }
 }
 
@@ -200,7 +254,9 @@ fun LaunchListPreview() {
             mission = LaunchListQuery.Mission(
                 missionPatch = "https://raw.githubusercontent.com/apollographql/apollo-client/master/docs/source/logo/square.png",
                 name = "mission $it"
-            )
+            ),
+            isBooked = false
+
         )
     }
     LaunchList(list)
