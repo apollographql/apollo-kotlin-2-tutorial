@@ -65,7 +65,7 @@ fun LaunchListContent() {
         try {
             val launchList = apolloClient(context).query(LaunchListQuery()).toDeferred().await()
                 .data
-                ?.launches
+                ?.launchConnection
                 ?.launches
                 ?.filterNotNull()
             if (launchList == null) {
