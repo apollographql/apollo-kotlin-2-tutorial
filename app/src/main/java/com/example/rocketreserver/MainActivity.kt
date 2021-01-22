@@ -1,36 +1,29 @@
 package com.example.rocketreserver
 
 import android.os.Bundle
-import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.ScrollableColumn
-import androidx.compose.foundation.Text
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyColumnFor
 import androidx.compose.material.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layoutId
-import androidx.compose.ui.platform.ContextAmbient
+import androidx.compose.ui.platform.AmbientContext
 import androidx.compose.ui.platform.setContent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.ui.tooling.preview.Preview
 import coil.request.ImageRequest
-import com.apollographql.apollo.ApolloCall
-import com.apollographql.apollo.ApolloQueryCall
-import com.apollographql.apollo.api.Response
-import com.apollographql.apollo.coroutines.toDeferred
+import com.apollographql.apollo.coroutines.await
 import com.apollographql.apollo.coroutines.toFlow
-import com.apollographql.apollo.exception.ApolloException
 import dev.chrisbanes.accompanist.coil.CoilImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onErrorResume
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -66,7 +59,7 @@ sealed class UiState {
 
 @Composable
 fun LaunchListContent() {
-    val context = ContextAmbient.current
+    val context = AmbientContext.current
 
     val state = remember {
         apolloClient(context).query(LaunchListQuery()).watcher().toFlow()
@@ -89,10 +82,10 @@ fun LaunchListContent() {
             }
     }.collectAsState(initial = UiState.Loading)
 
-    Stack(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize()) {
         when (val value = state.value) {
-            is UiState.Loading -> Loading(modifier = Modifier.gravity(Alignment.Center))
-            is UiState.Error -> Error(modifier = Modifier.gravity(Alignment.Center))
+            is UiState.Loading -> Loading(modifier = Modifier.align(Alignment.Center))
+            is UiState.Error -> Error(modifier = Modifier.align(Alignment.Center))
             is UiState.Success -> LaunchList(launchList = value.launchList)
         }
     }
@@ -133,7 +126,7 @@ fun LaunchList(launchList: List<LaunchListQuery.Launch>) {
 
 @Composable
 fun LaunchItem(launch: LaunchListQuery.Launch, modifier: Modifier = Modifier) {
-    val context = ContextAmbient.current
+    val context = AmbientContext.current
 
     val bookTrip = {
         // TODO: use something better than GlobalScope
@@ -152,7 +145,7 @@ fun LaunchItem(launch: LaunchListQuery.Launch, modifier: Modifier = Modifier) {
                                 )
                             )
                         )
-                    ).toDeferred().await()
+                    ).await()
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -215,7 +208,7 @@ fun LaunchItem(launch: LaunchListQuery.Launch, modifier: Modifier = Modifier) {
         }) {
         CoilImage(
             modifier = Modifier.layoutId("image"),
-            request = ImageRequest.Builder(ContextAmbient.current)
+            request = ImageRequest.Builder(AmbientContext.current)
                 .placeholder(R.drawable.ic_placeholder)
                 .data(launch.mission!!.missionPatch ?: R.drawable.ic_placeholder)
                 .build()
