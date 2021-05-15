@@ -15,21 +15,20 @@ fun apolloClient(context: Context): ApolloClient {
         "Only the main thread can get the apolloClient instance"
     }
 
-    if (instance != null) {
-        return instance!!
-    }
-
     val okHttpClient = OkHttpClient.Builder()
         .addInterceptor(AuthorizationInterceptor(context))
         .build()
 
-    instance = ApolloClient.builder()
+    return instance ?: ApolloClient.builder()
         .serverUrl("https://apollo-fullstack-tutorial.herokuapp.com/graphql")
-        .subscriptionTransportFactory(WebSocketSubscriptionTransport.Factory("wss://apollo-fullstack-tutorial.herokuapp.com/graphql", okHttpClient))
+        .subscriptionTransportFactory(
+            WebSocketSubscriptionTransport.Factory(
+                "wss://apollo-fullstack-tutorial.herokuapp.com/graphql",
+                okHttpClient
+            )
+        )
         .okHttpClient(okHttpClient)
-        .build()
-
-    return instance!!
+        .build().also { instance = it }
 }
 
 private class AuthorizationInterceptor(val context: Context) : Interceptor {
